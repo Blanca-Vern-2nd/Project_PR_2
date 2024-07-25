@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tester</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <!-- Load Teachable Machine Pose Model -->
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+        }
+        .navbar {
+            background-color: #333;
+            overflow: hidden;
+            color: white;
+            padding: 14px 16px;
+        }
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 14px 16px;
+            float: left;
+        }
+        .container {
+            text-align: center;
+            padding: 20px;
+        }
+        #output {
+            font-family: monospace;
+            white-space: pre;
+            background: black;
+            color: lime;
+            padding: 10px;
+        }
+        #webcam-container, #pose-canvas-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        canvas {
+            max-width: 100%;
+            height: auto;
+        }
+        table {
+            margin-top: 20px;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="index.html">Home</a>
+        <a href="table.html">Table</a>
+        <a href="bed.html">Bed</a>
+        <a href="tester.html">Tester</a>
+    </div>
+    <div class="container">
+        <button id="capture">Capture</button>
+        <button id="stats">Stats for Nerds</button>
+        <div id="webcam-container"></div>
+        <div id="pose-canvas-container"></div>
+        <div id="output"></div>
+        <div id="stats-table"></div>
+    </div>
+
+    <script type="text/javascript">
+        const URL1 = "./";
+        const URL2 = "./model2/";
+        const modelURL1 = URL1 + "model.json";
+        const metadataURL1 = URL1 + "metadata.json";
+        const modelURL2 = URL2 + "model.json";
+        const metadataURL2 = URL2 + "metadata.json";
+        let model1, model2, webcam, maxPredictions1, maxPredictions2;
+
+        async function init() {
+            model1 = await tmPose.load(modelURL1, metadataURL1);
+            model2 = await tmPose.load(modelURL2, metadataURL2);
+            maxPredictions1 = model1.getTotalClasses();
+            maxPredictions2 = model2.getTotalClasses();
+
+            const size = 200;
+            const flip = true;
+            webcam = new tmPose.Webcam(size, size, flip);
+            await webcam.setup();
+            await webcam.play();
+            window.requestAnimationFrame(loop);
+
+            document.getElementById('webcam-container').appendChild(webcam.canvas);
+        }
+
+        async function loop(timestamp) {
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            try {
+                const { pose, posenetOutput } = await model1.estimatePose(webcam.canvas);
+                console.log(`PoseNet confidence score: ${pose && pose.score ? pose.score : 'Unavailable'}`);
+                const prediction1 = await model1.predict(posenetOutput);
+                const prediction2 = await model2.predict(posenetOutput);
+                let results = '';
+                for (let i = 0; i < maxPredictions1; i++) {
+                    results += prediction1[i].className + ': ' + prediction1[i].probability.toFixed(2) + '\n';
+                }
+                for (let i = 0; i < maxPredictions2; i++) {
+                    results += prediction2[i].className + ': ' + prediction2[i].probability.toFixed(2) + '\n';
+                }
+                document.getElementById('output').textContent = results;
+
+                // Draw the PoseNet figure
+                if (pose) {
+                    const poseCanvas = document.createElement('canvas');
+                    const ctx = poseCanvas.getContext('2d');
+                    poseCanvas.width = webcam.canvas.width;
+                    poseCanvas.height = webcam.canvas.height;
+                    tmPose.drawKeypoints(pose.keypoints, 0.5, ctx);
+                    tmPose.drawSkeleton(pose.keypoints, 0.5, ctx);
+                    document.getElementById('pose-canvas-container').innerHTML = '';
+                    document.getElementById('pose-canvas-container').appendChild(poseCanvas);
+
+                    // Update stats dynamically
+                    let table = '<table><tr><th>Keypoint</th><th>Confidence Score</th></tr>';
+                    for (let i = 0; i < pose.keypoints.length; i++) {
+                        table += `<tr><td>${pose.keypoints[i].part}</td><td>${pose.keypoints[i].score.toFixed(2)}</td></tr>`;
+                    }
+                    table += '</table>';
+                    document.getElementById('stats-table').innerHTML = table;
+                } else {
+                    document.getElementById('stats-table').textContent = 'No pose data available';
+                }
+            } catch (error) {
+                console.error('Error predicting pose:', error);
+            }
+        }
+
+        document.getElementById('capture').addEventListener('click', predict);
+        document.getElementById('stats').addEventListener('click', () => {
+            const statsTable = document.getElementById('stats-table');
+            if (statsTable.style.display === 'none' || statsTable.style.display === '') {
+                statsTable.style.display = 'block';
+            } else {
+                statsTable.style.display = 'none';
+            }
+        });
+
+        init();
+    </script>
+</body>
+</html>
